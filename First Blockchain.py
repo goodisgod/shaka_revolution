@@ -3,8 +3,8 @@ import hashlib #hash generator
 
 """
 TO DO LIST:\
-**imbed blockchain verification into transfer code
-**create an exterior database to hold account information as well as the blockchain
+**imbed blockchain verification into transfer code (CHECK)
+**pull blockchain if it exists from file at program starts
 **change password input so it's not visible on console
 **implement a mechanism for shaka creation
 **develop a GUI
@@ -49,11 +49,13 @@ class Block:
                 print "Data is missing from set."
                 return False
             else:
-                #execute the transfer
-                self.data["origin"].accountBalance -= self.data["amount"]
-                self.data["reciever"].accountBalance += self.data["amount"]
-
-                #CREATE verification method!
+                if self.data["origin"].accountBalance >= self.data["amount"]:
+                    #execute the transfer
+                    self.data["origin"].accountBalance -= self.data["amount"]
+                    self.data["reciever"].accountBalance += self.data["amount"]
+                #ISSUE: overdraft
+                else:
+                    print "Insufficient funds to complete transfer."
 
         elif self.index == 0:  #case of the genesis block
             return True
@@ -67,6 +69,11 @@ class Blockchain:
     def __init__(self):
         self.chain = [self.createGenesisBlock()]    #list that holds blocks
 
+        blockchainFile = open("blockchain.txt", 'w')
+        blockchainFile.write("Index \t Timestamp \t Origin \t Reciever \t Amount \t Hash \t Previous Hash")
+        blockchainFile.write('\n' + str(self.getLatestBlock().index) + '\t' + str(self.getLatestBlock().timestamp) + '\t' + "0" + '\t' + "0" + '\t' + "0" + '\t' + self.getLatestBlock().hash + '\t' + self.getLatestBlock().previousHash)
+        blockchainFile.close()
+
     def createGenesisBlock(self):
         return Block(0, "Genesis Block", "0")
 
@@ -78,6 +85,21 @@ class Blockchain:
         newBlock.hash = newBlock.calculateHash()
         self.chain.append(newBlock)
 
+        #record new transaction to disk
+        #formatted as [index, timestamp, data, hash, previous hash]
+        blockchainFile = open("blockchain.txt", "a+")
+        blockchainFile.write('\n' + str(newBlock.index) + '\t' + str(newBlock.timestamp) + '\t' + newBlock.data["origin"].username + '\t' + newBlock.data["reciever"].username + '\t' + str(newBlock.data["amount"]) + '\t' + newBlock.hash + '\t' + newBlock.previousHash)
+        blockchainFile.close()
+        
+        #method of reversing last transaction
+        if self.isChainValid() == False:
+            print "Corrupt Block: reversing latest transaction..."
+            currentIndex = self.getLatestBlock().index + 1
+            self.addBlock(Block(1, {"origin": self.getLatestBlock().data["origin"], "reciever": self.getLatestBlock().data["reciever"], "amount": -self.getLatestBlock().data["amount"]}))
+            #delete the last two blocks in the chain
+            del self.chain[-1]
+            del self.chain[-2]
+            
     def isChainValid(self):
         i= 0
         for link in self.chain:
@@ -89,7 +111,7 @@ class Blockchain:
             else:
                 i = 1
             prevLink = link
-        return True    
+        return True
 
     #method of printing blockchain for troubleshooting
     def stringify(self):
@@ -153,7 +175,6 @@ ShakaGold.addBlock(Block(2, {"origin": Eve, "reciever": Adam, "amount": 4}))
 
 #ATM
 currentUser = login()
-print currentUser
 while isinstance(currentUser, tuple):
     print ''
     query = raw_input("Access [info], make a [transfer], or change [password]: ")
@@ -164,8 +185,13 @@ while isinstance(currentUser, tuple):
         print currentUser[2].info()
 
     #transfer money
-    if query == "transfer":
-        recipient = input("Specify recipient: ")
+    elif query == "transfer":
+        try:
+            recipient = input("Specify recipient: ")
+        except:
+            print "No user with this name exists."
+            continue
+        
         amount = input("Amount to Transfer; $")
         currentIndex = ShakaGold.getLatestBlock().index + 1
         ShakaGold.addBlock(Block(currentIndex, {"origin": currentUser[2], "reciever": recipient, "amount": amount}))
